@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>柜体表编码提取工具 - 自动加载CSV数据库版</title>
+    <title>柜体表编码提取工具 - 数据库比对版</title>
     <style>
         * { box-sizing: border-box; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; margin: 0; padding: 20px; }
@@ -29,8 +29,8 @@
         .db-info { background: #d1e7dd; color: #0f5132; padding: 12px 16px; border-radius: 10px; margin-top: 12px; font-size: 14px; }
         .db-error { background: #f8d7da; color: #721c24; }
         .db-warning { background: #fff3cd; color: #856404; }
-        .db-empty { background: #e9ecef; color: #6c757d; }
         .db-loading { background: #cfe2ff; color: #084298; }
+        .db-empty { background: #e9ecef; color: #6c757d; }
         .file-list { background: #e9ecef; border-radius: 12px; padding: 12px 20px; margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
         .file-tag { background: #0d6efd; color: white; padding: 4px 12px; border-radius: 20px; font-size: 13px; display: inline-flex; align-items: center; gap: 8px; }
         .file-tag .remove { cursor: pointer; background: rgba(255,255,255,0.3); border-radius: 50%; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; }
@@ -48,9 +48,8 @@
         .rule-highlight { background: #e9ecef; border-left: 4px solid #0d6efd; padding: 8px 16px; margin: 12px 0; border-radius: 12px; font-size: 14px; }
         .column-limit-badge { background: #0d6efd20; color: #0d6efd; border-radius: 20px; padding: 4px 12px; font-weight: 500; margin-left: 8px; }
         .auto-badge { background: #19875420; color: #198754; border-radius: 20px; padding: 4px 12px; font-size: 12px; margin-left: 12px; }
-        .manual-load-area { background: #f8f9fa; border-radius: 12px; padding: 16px; margin-top: 16px; border: 1px solid #dee2e6; }
-        .btn-sm { padding: 6px 12px; font-size: 13px; }
-        .debug-info { font-family: monospace; font-size: 11px; color: #6c757d; margin-top: 8px; word-break: break-all; }
+        .db-config-box { background: #f8f9fa; border-radius: 12px; padding: 16px; margin: 12px 0; border: 1px solid #dee2e6; }
+        .path-display { font-family: monospace; background: #e9ecef; padding: 8px; border-radius: 6px; word-break: break-all; font-size: 12px; }
     </style>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 </head>
@@ -60,29 +59,27 @@
         <h1>📄 柜体表编码提取工具 <span class="column-limit-badge">🔍 A→N列</span><span class="auto-badge">🤖 自动加载CSV数据库</span></h1>
         <div class="sub">提取柜体表编码，与CSV数据库比对 | 仅处理A列至N列</div>
 
-        <!-- 数据库状态区域 -->
+        <!-- 数据库配置显示 -->
+        <div class="db-config-box">
+            <div style="font-weight: 600; margin-bottom: 8px;">📌 数据库配置</div>
+            <div class="path-display" id="dbPathDisplay">正在检测...</div>
+            <div style="font-size: 12px; color: #6c757d; margin-top: 8px;">
+                💡 CSV文件格式：第1行版本号，第2行标题行（自动跳过），后续每行：编码,状态,编码状态,编码描述（取前3列）
+            </div>
+        </div>
+
+        <!-- 数据库加载区域 -->
         <div class="flex-row" style="justify-content: space-between; align-items: center; flex-wrap: wrap;">
             <div class="button-group">
-                <button id="refreshDbBtn" class="btn-outline refresh-db-btn">🔄 重新加载数据库</button>
-                <button id="manualLoadDbBtn" class="btn-purple btn-sm">📁 手动选择数据库文件</button>
-                <button id="clearDbBtn" class="btn-danger btn-clear-db">🗑️ 清空缓存</button>
+                <button id="refreshDbBtn" class="btn-outline">🔄 重新加载数据库</button>
+                <button id="manualLoadBtn" class="btn-purple">📁 手动选择CSV文件</button>
+                <button id="clearDbBtn" class="btn-danger">🗑️ 清空缓存</button>
             </div>
             <div id="savedDbInfo" style="font-size: 12px; color: #6c757d;"></div>
         </div>
         
         <div id="dbInfo" class="db-loading" style="margin-top: 12px;">
             ⏳ 正在加载数据库...
-        </div>
-
-        <!-- 手动加载区域（备用） -->
-        <div class="manual-load-area">
-            <div style="font-weight: 600; margin-bottom: 8px;">📌 如果自动加载失败，请尝试：</div>
-            <div style="font-size: 13px; margin-bottom: 8px;">
-                1️⃣ 确保仓库根目录存在 <strong>coded database.csv</strong> 文件<br>
-                2️⃣ 点击上方「手动选择数据库文件」按钮，手动选择CSV文件<br>
-                3️⃣ 检查CSV格式：第一行为版本号（如 DB_VERSION:20260603），后续每行格式：<strong>编码,状态,编码状态</strong>
-            </div>
-            <div id="debugPathInfo" class="debug-info"></div>
         </div>
 
         <hr>
@@ -106,8 +103,7 @@
         <div class="rule-area" style="margin-top: 20px;">
             <div style="font-weight: 600; margin-bottom: 12px;">🎯 提取规则</div>
             <div class="rule-highlight">
-                ✅ 提取时仅扫描 Excel 工作表的 <strong>A 列 至 N 列</strong>（即列索引 1~14）<br>
-                📁 数据库来源：仓库根目录的 <strong>coded database.csv</strong> 或手动上传
+                ✅ 提取时仅扫描 Excel 工作表的 <strong>A 列 至 N 列</strong>（即列索引 1~14）
             </div>
             <div class="rule-checkbox"><input type="checkbox" id="enableFormatA" checked> <label>格式A：M + 两位大写字母 + 六位数字（如 MAB123456）</label></div>
             <div class="rule-checkbox"><input type="checkbox" id="enableFormatB" checked> <label>格式B：6位数字 100001~999999（如 123456）</label></div>
@@ -124,54 +120,41 @@
             <div class="preview-grid" id="resultTable"></div>
         </div>
         <div class="footer">
-            💡 提示：如果自动加载一直失败，请点击「手动选择数据库文件」按钮上传CSV文件。<br>
-            📌 CSV文件格式示例：<br>
-            DB_VERSION:20260603<br>
-            MAB123456,已下单,正常<br>
-            123456,生产中,正常
+            💡 数据库自动从同目录加载 <code>coded database.csv</code>，如失败请手动选择文件。<br>
+            📌 CSV格式：第1行版本号，第2行标题行（自动跳过），第3行起：编码,状态,编码状态,编码描述
         </div>
     </div>
 </div>
 
 <script>
     // ============================================================
-    // 配置：尝试多个可能的路径
+    // 数据库 Raw 链接（您的CSV文件）
     // ============================================================
-    const CSV_FILENAME = "coded database.csv";
-    // 尝试多个可能的路径（按顺序）
-    let possiblePaths = [];
+    const DATABASE_URL = "https://raw.githubusercontent.com/Hu3430/BCGCYWB-ZY/main/coded%20database.csv";
     
-    // 动态获取当前页面路径，构建可能的CSV路径
-    function buildPossiblePaths() {
-        const currentPath = window.location.pathname;
-        const basePath = currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
-        const origin = window.location.origin;
-        
-        const paths = [
-            `${origin}${basePath}${CSV_FILENAME}`,           // 同目录
-            `${origin}/${CSV_FILENAME}`,                      // 根目录
-            `${origin}${basePath}data/${CSV_FILENAME}`,       // data子目录
-            `${origin}${basePath}database/${CSV_FILENAME}`,   // database子目录
-        ];
-        
-        // 去重
-        return [...new Set(paths)];
-    }
+    // 显示当前配置的路径
+    document.getElementById('dbPathDisplay').innerHTML = `📂 数据库源: <strong>${escapeHtml(DATABASE_URL)}</strong>`;
+    
+    // 全局变量
+    let databaseMap = new Map();
+    let dbLoaded = false;
+    let selectedFiles = [];
+    let rawResults = [];
+    let mergedResults = [];
     
     // DOM 元素
     const refreshDbBtn = document.getElementById('refreshDbBtn');
-    const manualLoadDbBtn = document.getElementById('manualLoadDbBtn');
+    const manualLoadBtn = document.getElementById('manualLoadBtn');
     const clearDbBtn = document.getElementById('clearDbBtn');
     const dbInfo = document.getElementById('dbInfo');
     const savedDbInfo = document.getElementById('savedDbInfo');
-    const debugPathInfo = document.getElementById('debugPathInfo');
+    const processFilesBtn = document.getElementById('processFilesBtn');
+    const progressMsg = document.getElementById('progressMsg');
     const extractUploadArea = document.getElementById('extractUploadArea');
     const extractFileInput = document.getElementById('extractFileInput');
     const fileListArea = document.getElementById('fileListArea');
     const fileTags = document.getElementById('fileTags');
     const clearFilesBtn = document.getElementById('clearFilesBtn');
-    const processFilesBtn = document.getElementById('processFilesBtn');
-    const progressMsg = document.getElementById('progressMsg');
     const enableFormatA = document.getElementById('enableFormatA');
     const enableFormatB = document.getElementById('enableFormatB');
     const enableCustomFormat = document.getElementById('enableCustomFormat');
@@ -181,17 +164,9 @@
     const statsArea = document.getElementById('statsArea');
     const exportCsvBtn = document.getElementById('exportCsvBtn');
     const resetBtn = document.getElementById('resetBtn');
-
-    // 数据存储
-    let databaseMap = new Map();
-    let currentDbVersion = "";
-    let dbLoaded = false;
-    let selectedFiles = [];
-    let rawResults = [];
-    let mergedResults = [];
-
-    function escapeHtml(str) { 
-        if (!str) return ''; 
+    
+    function escapeHtml(str) {
+        if (!str) return '';
         return str.replace(/[&<>]/g, function(m) {
             if (m === '&') return '&amp;';
             if (m === '<') return '&lt;';
@@ -199,131 +174,108 @@
             return m;
         });
     }
-
-    // 解析CSV文本
+    
+    // 解析CSV文本（适配您的格式：第1行版本号，第2行标题行跳过，后续每行取前3列）
     function parseCSVText(csvText) {
         const lines = csvText.split(/\r?\n/);
-        if (lines.length === 0) {
-            throw new Error("CSV文件为空");
-        }
+        if (lines.length === 0) throw new Error("CSV文件为空");
         
-        // 第一行作为版本标识
+        // 第1行：版本号（可能包含空列，只取第一个非空值）
         let versionLine = lines[0].trim();
-        let dbVersion = versionLine || "未知版本";
+        let dbVersion = "未知版本";
+        if (versionLine) {
+            // 处理类似 "DB_VERSION:20260603,,," 的情况，只取第一部分
+            const versionParts = versionLine.split(',');
+            dbVersion = versionParts[0] || "未知版本";
+        }
         
         const newMap = new Map();
         
-        for (let i = 1; i < lines.length; i++) {
-            let line = lines[i].trim();
+        // 从第3行开始解析（第2行是标题行，跳过）
+        for (let i = 2; i < lines.length; i++) {
+            const line = lines[i].trim();
             if (line === "") continue;
             
-            // 简单CSV解析
-            let row = [];
+            // CSV解析（支持引号包裹的字段）
+            let parts = [];
             let inQuote = false;
             let current = '';
             for (let ch of line) {
                 if (ch === '"') {
                     inQuote = !inQuote;
                 } else if (ch === ',' && !inQuote) {
-                    row.push(current.trim());
+                    parts.push(current.trim());
                     current = '';
                 } else {
                     current += ch;
                 }
             }
-            row.push(current.trim());
+            parts.push(current.trim());
             
-            // 清理引号
-            row = row.map(cell => {
+            // 清理每项首尾引号
+            parts = parts.map(cell => {
                 if (cell.startsWith('"') && cell.endsWith('"')) return cell.slice(1, -1);
                 return cell;
             });
             
-            if (row.length >= 1) {
-                const code = row[0] ? row[0].trim() : "";
-                const status = (row.length >= 2 && row[1]) ? row[1].trim() : "未知状态";
-                const codeStatus = (row.length >= 3 && row[2]) ? row[2].trim() : "";
-                if (code !== "") {
-                    newMap.set(code, { status: status, codeStatus: codeStatus });
-                }
+            // 取前3列：编码, 状态, 编码状态
+            const code = parts[0] ? parts[0].trim() : "";
+            const status = (parts.length >= 2 && parts[1]) ? parts[1].trim() : "未知状态";
+            const codeStatus = (parts.length >= 3 && parts[2]) ? parts[2].trim() : "";
+            
+            if (code !== "") {
+                newMap.set(code, { status: status, codeStatus: codeStatus });
             }
+        }
+        
+        if (newMap.size === 0) {
+            throw new Error("CSV文件中没有有效数据（请确保第3行开始有编码、状态、编码状态三列）");
         }
         
         return { map: newMap, version: dbVersion };
     }
-
-    // 从URL加载CSV
+    
+    // 从URL加载数据库
     async function loadDatabaseFromURL(url) {
-        try {
-            const response = await fetch(url, { cache: 'no-store' });
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            const csvText = await response.text();
-            const result = parseCSVText(csvText);
-            if (result.map.size === 0) {
-                throw new Error("CSV文件中没有有效数据");
-            }
-            return result;
-        } catch (err) {
-            throw err;
+        const response = await fetch(url, { cache: 'no-store' });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: 文件不存在`);
         }
+        const csvText = await response.text();
+        const result = parseCSVText(csvText);
+        if (result.map.size === 0) throw new Error("CSV文件中没有有效数据");
+        return result;
     }
-
-    // 尝试从多个路径加载数据库
-    async function tryLoadDatabase() {
-        possiblePaths = buildPossiblePaths();
-        
-        // 显示调试信息
-        debugPathInfo.innerHTML = `🔍 尝试加载以下路径:<br>${possiblePaths.map(p => `&nbsp;&nbsp;• ${p}`).join('<br>')}`;
-        
-        for (let i = 0; i < possiblePaths.length; i++) {
-            const path = possiblePaths[i];
-            dbInfo.innerHTML = `⏳ 尝试加载: ${escapeHtml(path)} ...`;
-            dbInfo.className = 'db-loading';
-            
-            try {
-                const result = await loadDatabaseFromURL(path);
-                // 加载成功
-                databaseMap = result.map;
-                currentDbVersion = result.version;
-                dbLoaded = true;
-                
-                dbInfo.innerHTML = `✅ 数据库加载成功！版本：<strong>${escapeHtml(result.version)}</strong>，共 ${databaseMap.size} 条记录。<br>📁 来源: ${escapeHtml(path)}`;
-                dbInfo.className = 'db-info';
-                
-                // 保存到 localStorage
-                const data = [];
-                for (let [code, info] of databaseMap) {
-                    data.push([code, info.status, info.codeStatus]);
-                }
-                localStorage.setItem('databaseData', JSON.stringify(data));
-                localStorage.setItem('databaseVersion', result.version);
-                savedDbInfo.innerHTML = `💾 已缓存数据库 (${databaseMap.size}条)`;
-                
-                // 启用处理按钮
-                processFilesBtn.disabled = false;
-                return true;
-                
-            } catch (err) {
-                console.warn(`加载失败 ${path}:`, err.message);
-                continue;
-            }
-        }
-        
-        return false;
-    }
-
+    
     // 主加载函数
     async function loadDatabase() {
-        dbInfo.innerHTML = "⏳ 正在从仓库加载 coded database.csv ...";
+        dbInfo.innerHTML = `⏳ 正在从 ${escapeHtml(DATABASE_URL)} 加载数据库...`;
         dbInfo.className = 'db-loading';
         processFilesBtn.disabled = true;
         
-        const success = await tryLoadDatabase();
-        
-        if (!success) {
-            // 尝试从 localStorage 读取缓存
+        try {
+            const result = await loadDatabaseFromURL(DATABASE_URL);
+            databaseMap = result.map;
+            dbLoaded = true;
+            
+            dbInfo.innerHTML = `✅ 数据库加载成功！版本：<strong>${escapeHtml(result.version)}</strong>，共 ${databaseMap.size} 条记录。<br>📁 来源: ${escapeHtml(DATABASE_URL)}<br>📌 格式：自动跳过标题行，读取编码、状态、编码状态三列`;
+            dbInfo.className = 'db-info';
+            
+            // 保存到localStorage
+            const data = [];
+            for (let [code, info] of databaseMap) {
+                data.push([code, info.status, info.codeStatus]);
+            }
+            localStorage.setItem('databaseData', JSON.stringify(data));
+            localStorage.setItem('databaseVersion', result.version);
+            savedDbInfo.innerHTML = `💾 已缓存数据库 (${databaseMap.size}条)`;
+            
+            processFilesBtn.disabled = false;
+            
+        } catch (err) {
+            console.error("加载失败:", err);
+            
+            // 尝试从localStorage读取缓存
             const savedVersion = localStorage.getItem('databaseVersion');
             const savedData = localStorage.getItem('databaseData');
             
@@ -334,58 +286,48 @@
                     for (let i = 0; i < data.length; i++) {
                         databaseMap.set(data[i][0], { status: data[i][1], codeStatus: data[i][2] || "" });
                     }
-                    currentDbVersion = savedVersion;
                     dbLoaded = true;
-                    
-                    dbInfo.innerHTML = `⚠️ 自动加载失败，已使用本地缓存数据库。版本：${escapeHtml(savedVersion)}，共 ${databaseMap.size} 条记录。<br>
-                    ❌ 请确保仓库中存在 "${CSV_FILENAME}" 文件，或点击「手动选择数据库文件」按钮上传。`;
+                    dbInfo.innerHTML = `⚠️ 自动加载失败，已使用缓存数据库。版本：${escapeHtml(savedVersion)}，共 ${databaseMap.size} 条记录。<br>
+                    ❌ 错误: ${escapeHtml(err.message)}<br>
+                    📌 请确认文件路径是否正确，或点击「手动选择CSV文件」`;
                     dbInfo.className = 'db-warning';
                     processFilesBtn.disabled = false;
                     return;
                 } catch(e) {}
             }
             
-            // 完全失败
             dbLoaded = false;
-            dbInfo.innerHTML = `❌ 无法加载数据库文件！<br>
-            📌 请确保仓库根目录存在 <strong>${CSV_FILENAME}</strong> 文件。<br>
-            📌 或点击上方「手动选择数据库文件」按钮手动上传CSV文件。<br>
-            <br>
-            <strong>CSV文件格式要求：</strong><br>
-            第一行：版本号（如 DB_VERSION:20260603）<br>
-            后续每行：编码,状态,编码状态`;
+            dbInfo.innerHTML = `❌ 加载失败: ${escapeHtml(err.message)}<br>
+            📌 请检查：<br>
+            1️⃣ 文件路径是否正确: <strong>${escapeHtml(DATABASE_URL)}</strong><br>
+            2️⃣ CSV文件格式：第1行版本号，第2行标题行，第3行起：编码,状态,编码状态,...<br>
+            3️⃣ 或点击「手动选择CSV文件」手动上传`;
             dbInfo.className = 'db-error';
             processFilesBtn.disabled = true;
         }
     }
-
-    // 手动加载数据库文件
+    
+    // 手动加载（同样适配您的格式）
     function manualLoadDatabase() {
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = '.csv,.xlsx,.xls';
+        input.accept = '.csv';
         input.onchange = async (e) => {
             if (e.target.files.length) {
                 const file = e.target.files[0];
-                dbInfo.innerHTML = `⏳ 正在加载手动选择的文件: ${escapeHtml(file.name)} ...`;
+                dbInfo.innerHTML = `⏳ 正在加载 ${escapeHtml(file.name)} ...`;
                 dbInfo.className = 'db-loading';
                 
                 try {
                     const text = await file.text();
                     const result = parseCSVText(text);
                     
-                    if (result.map.size === 0) {
-                        throw new Error("文件中没有有效数据");
-                    }
-                    
                     databaseMap = result.map;
-                    currentDbVersion = result.version;
                     dbLoaded = true;
                     
                     dbInfo.innerHTML = `✅ 手动加载成功！版本：<strong>${escapeHtml(result.version)}</strong>，共 ${databaseMap.size} 条记录。<br>📁 来源: ${escapeHtml(file.name)}`;
                     dbInfo.className = 'db-info';
                     
-                    // 保存到 localStorage
                     const data = [];
                     for (let [code, info] of databaseMap) {
                         data.push([code, info.status, info.codeStatus]);
@@ -397,7 +339,8 @@
                     processFilesBtn.disabled = false;
                     
                 } catch (err) {
-                    dbInfo.innerHTML = `❌ 加载失败: ${escapeHtml(err.message)}<br>请检查CSV格式是否正确。`;
+                    dbInfo.innerHTML = `❌ 加载失败: ${escapeHtml(err.message)}<br>
+                    📌 请确保CSV格式：第1行版本号，第2行标题行，第3行起：编码,状态,编码状态`;
                     dbInfo.className = 'db-error';
                     dbLoaded = false;
                     processFilesBtn.disabled = true;
@@ -406,7 +349,7 @@
         };
         input.click();
     }
-
+    
     // 清空缓存
     function clearDatabaseCache() {
         localStorage.removeItem('databaseData');
@@ -415,8 +358,8 @@
         dbInfo.innerHTML = "🗑️ 缓存已清空，正在重新加载...";
         loadDatabase();
     }
-
-    // 提取规则相关函数
+    
+    // 提取规则函数
     function getFormatARegex() { return /M[A-Z]{2}\d{6}/g; }
     
     function matchFormatB(text) {
@@ -442,7 +385,7 @@
         return patterns;
     }
     
-    function extractAllMatchesWithColumnLimit(cellText, patterns) {
+    function extractAllMatches(cellText, patterns) {
         if (!cellText || typeof cellText !== 'string') return [];
         const matches = [], seen = new Set();
         for (let i = 0; i < patterns.length; i++) {
@@ -450,8 +393,7 @@
             if (pattern.customMatch) {
                 const m = pattern.customMatch(cellText);
                 for (let j = 0; j < m.length; j++) {
-                    const val = m[j];
-                    if (!seen.has(val)) { seen.add(val); matches.push(val); }
+                    if (!seen.has(m[j])) { seen.add(m[j]); matches.push(m[j]); }
                 }
             } else if (pattern.regex) {
                 pattern.regex.lastIndex = 0;
@@ -464,7 +406,7 @@
         return matches;
     }
     
-    async function processExtractFileWithColumnLimit(file, patterns) {
+    async function processExtractFile(file, patterns) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -475,7 +417,7 @@
                     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
                     const fileResults = [], uniqueSet = new Set();
                     if (!rows || rows.length === 0) { resolve(fileResults); return; }
-                    const MAX_COL_INDEX = 13;   // N列
+                    const MAX_COL_INDEX = 13;  // N列
                     for (let r = 0; r < rows.length; r++) {
                         const row = rows[r];
                         if (!row) continue;
@@ -484,10 +426,9 @@
                             const cell = row[c];
                             const strValue = String(cell === undefined || cell === null ? "" : cell);
                             if (strValue.trim()) {
-                                const matches = extractAllMatchesWithColumnLimit(strValue, patterns);
+                                const matches = extractAllMatches(strValue, patterns);
                                 for (let m = 0; m < matches.length; m++) {
-                                    const match = matches[m];
-                                    if (!uniqueSet.has(match)) { uniqueSet.add(match); fileResults.push(match); }
+                                    if (!uniqueSet.has(matches[m])) { uniqueSet.add(matches[m]); fileResults.push(matches[m]); }
                                 }
                             }
                         }
@@ -502,7 +443,7 @@
     
     async function processAllFiles() {
         if (!dbLoaded || databaseMap.size === 0) { 
-            alert("请先加载数据库（自动或手动）"); 
+            alert("请先加载数据库"); 
             return; 
         }
         if (selectedFiles.length === 0) { 
@@ -519,7 +460,7 @@
         for (let f = 0; f < selectedFiles.length; f++) {
             const file = selectedFiles[f];
             try {
-                const extractedCodes = await processExtractFileWithColumnLimit(file, patterns);
+                const extractedCodes = await processExtractFile(file, patterns);
                 for (let c = 0; c < extractedCodes.length; c++) {
                     const code = extractedCodes[c];
                     const dbInfoItem = databaseMap.get(code);
@@ -547,7 +488,7 @@
         renderResults(mergedResults);
         resultPanel.style.display = "block";
         progressMsg.textContent = `处理完成！共提取 ${rawResults.length} 条匹配，合并后 ${mergedResults.length} 个唯一编码`;
-        setTimeout(() => { progressMsg.textContent = ""; }, 4000);
+        setTimeout(() => { progressMsg.textContent = ""; }, 3000);
     }
     
     function mergeResults() {
@@ -559,7 +500,7 @@
             }
             codeMap.get(item.extractedCode).fileNames.add(item.fileName);
         }
-        mergedResults = [];
+        mergedResults = [];   mergedResults = []；
         for (let [code, data] of codeMap) {
             mergedResults.push({ code: code, fileNames: Array.from(data.fileNames).join("；"), status: data.status, codeStatus: data.codeStatus });
         }
@@ -578,10 +519,10 @@
         for (let item of results) {
             let statusHtml = (item.status === "未找到") ? '<span class="status-notfound">❌ 未找到</span>' : '<span class="status-found">✅ ' + escapeHtml(item.status) + '</span>';
             let codeStatusHtml = (item.codeStatus && item.codeStatus !== "") ? '<span class="status-found">📌 ' + escapeHtml(item.codeStatus) + '</span>' : '<span style="color:#6c757d;">—</span>';
-            html += `<tr><td><code>${escapeHtml(item.code)}</code></td><td>${escapeHtml(item.fileNames)}</td><td>${statusHtml}</td><td>${codeStatusHtml}</td></tr>`;
+            html += `<tr><td><code>${escapeHtml(item.code)}</code></td><td>${escapeHtml(item.fileNames)}</span></td><td>${statusHtml}</td><td>${codeStatusHtml}</td></tr>`;
         }
         html += '</tbody></table>';
-        resultTableDiv.   < !DOCTYPE html   超文本标记语言>innerHTML = html   超文本标记语言;
+        resultTableDiv.innerHTML = html;
     }
     
     function exportToCSV() {
@@ -595,58 +536,58 @@
         }
         const blob = new Blob(["\uFEFF" + csvLines.join("\n")], { type: "text/csv;charset=utf-8;" });
         const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);链接。href = URL.createObjectURL(blob)；
-        const timestamp = new Date().toISOString().slice(0,19).replace(/:/g, '-');const timestamp = new Date(). toisostring ().slice（0,19）。替换(/:/ g,“-”);
+        link.href = URL.createObjectURL(blob);链接。href = URL.createObjectURL(blob   团)；
+        const timestamp = new Date().toISOString().slice(0,19).replace(/:/g, '-');const   常量   时间戳 timestamp      时间戳时间戳 = new   新    日期Date(). toisostring ().slice（0   片(0,19）。替换(/:/ g,“-”);
         link.download = `柜体表编码提取_${timestamp}.csv`;
         link.click();
         URL.revokeObjectURL(link.href);
     }
     
     function updateFileTags() {函数updateFileTags() {
-        if (selectedFiles.length === 0) { fileListArea.style.display = "none"; return; }如果(selectedFiles。length == 0) {fileListArea.style   风格.display   显示 = "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"；返回;｝
-        fileListArea.style.display = "flex";fileListArea.style   风格.display   显示 = "flex";
-        let tagsHtml = '';   let tagsHtml = "；
-        for (let i = 0; i < selectedFiles.length; i++) {
-            const file = selectedFiles[i];const file = selectedFiles[i   我]；
-            tagsHtml += `<div class="file-tag">📄 ${escapeHtml(file.name)} (${(file.size/1024).toFixed(1)}KB)<span class="remove" data-index="${i}">✕</span></div>`;
+        if (selectedFiles.length === 0) { fileListArea.style.display = "none"; return; }如果(selectedFiles。length   selectedFiles。长度 == 0) {fileListArea.style   风格.display   显示 = "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"；返回;｝
+        fileListArea.style.display = "flex";fileListArea.style   风格.display   显示 = "flex"   "flex"   "flex"   "flex"   "flex"   "flex"   "flex"   "flex"   "flex"   "flex"   "flex"   "flex"   "flex"   "flex"   "flex"   "flex"   "flex"   "flex";
+        let tagsHtml = '';   let   让 tagsHtml = "；   “;
+        for (let i = 0; i < selectedFiles.length; i++) {for   为 (let   让   我 i      我我 = 0; i   我 < selectedFiles.length   长度; i   我) {
+            const file = selectedFiles[i];const   常量   文件 file      文件文件 = selectedFiles[i   我]；
+            tagsHtml += `<div class="file-tag">📄 ${escapeHtml(file.name)} (${(file.size/1024).toFixed(1)}KB)<span class="remove" data-index="${i}">✕</span></div>`;tagsHtml = " < div经济舱= " file   文件-tag   标签" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= "" >📄$ {escapeHtml (file.name) ($ {(file.size / 1024) .toFixed (1), KB) <战事经济舱= " remove   删除" data-index = " $ {i " >✕< / span> < / div>”;
         }
         fileTags.innerHTML = tagsHtml;
-        document.querySelectorAll('.file-tag .remove').forEach(btn => btn.addEventListener('click', function() {
-            const idx = parseInt(this.getAttribute('data-index'));const idx = parseInt(this.getAttribute('data-index'))；
-            selectedFiles.splice(idx, 1);
+        document.querySelectorAll('.file-tag .remove').forEach(btn => btn.addEventListener('click', function() {document   文档.querySelectorAll(“.file   文件-tag   标签 .remove”   remove”   remove”   remove”   remove”   remove”   remove”   remove”   remove”   remove”   remove”   remove”   remove”   remove”   remove”   remove”   remove”)。forEach(btn => btn；addEventListener('click'   “点击”, function   函数() {
+            const idx = parseInt(this.getAttribute('data-index'));const   常量 idx = parseInt(this   这.getAttribute('data-index'   “材料指数”))；
+            selectedFiles.splice(idx, 1);selectedFiles。拼接(idx, 1);
             updateFileTags();
-            resultPanel.style.display = "none";
+            resultPanel.style.display = "none";resultPanel.style   风格.display   显示 = "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none";
         }));
     }
     
-    function handleExtractFiles(files) {
-        const valid = Array.from(files).filter(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls') || f.name.endsWith('.csv'));
-        if (!valid.length) { alert("请选择有效的 Excel 文件"); return; }
-        selectedFiles.push(...valid);
+    function handleExtractFiles(files) {函数handleExtractFiles(files   文件) {
+        const valid = Array.from(files).filter(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls') || f.name.endsWith('.csv'));const   常量   有效的 valid      有效的有效的 = Array   数组.from   从(files   文件).filter   过滤器(f => f.name   名字.endsWith('.xlsx'   “.xlsx”) || f.name   名字.endsWith('.xls'   “xls”) || f.name   名字.endsWith('.csv'))；
+        if (!valid.length) { alert("请选择有效的 Excel 文件"); return; }if   如果 (!valid   有效的.length   长度) { alert   警报("请选择有效的 Excel 文件"); return   返回; }
+        selectedFiles.push(...valid);selectedFiles.push   推(…有效);
         updateFileTags();
-        resultPanel.style.display = "none";resultPanel.style   风格.display   显示 = "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none";
+        resultPanel.style.display = "none";resultPanel.style   风格.display   显示 = "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none";
         progressMsg.textContent = `已选择 ${selectedFiles.length} 个文件`;
     }
     
-    function clearFiles() { selectedFiles = []; updateFileTags(); resultPanel.style.display = "none"; rawResults = []; mergedResults = []; extractFileInput.value = ""; }
-    function resetAll() { clearFiles(); resultPanel.style.display = "none"; rawResults = []; mergedResults = []; }
+    function clearFiles() { selectedFiles = []; updateFileTags(); resultPanel.style.display = "none"; rawResults = []; mergedResults = []; extractFileInput.value = ""; }函数clearFiles() {selectedFiles = []；updateFileTags ();resultPanel.style   风格.display   显示 = "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"；rawResults   ; rawResults = []；mergedResults   ; mergedResults = []；extractFileInput。Value = "；｝
+    function resetAll() { clearFiles(); resultPanel.style.display = "none"; rawResults = []; mergedResults = []; }函数resetAll() {clearFiles()；resultPanel   resultPanel;.style      风格风格.display   显示 = "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"   "none"；rawResults   ; rawResults = []；mergedResults   ; mergedResults = []；｝
     
     // 事件绑定
-    extractUploadArea.addEventListener('click', () => extractFileInput.click());
-    extractUploadArea.addEventListener('dragover', e => e.preventDefault());
-    extractUploadArea.addEventListener('drop', e => { e.preventDefault(); handleExtractFiles(e.dataTransfer.files); });
-    extractFileInput.addEventListener('change', e => { if(e.target.files.length) handleExtractFiles(e.target.files); extractFileInput.value=""; });
+    extractUploadArea.addEventListener('click', () => extractFileInput.click());extractUploadArea。addEventListener('click'   “点击”, () => extractFileInput.click   点击())；
+    extractUploadArea.addEventListener('dragover', e => e.preventDefault());extractUploadArea。addEventListener（‘拖拽’，eextractUploadArea。addEventListener（‘拖拽’，e => e. preventdefault ()）；
+    extractUploadArea.addEventListener('drop', e => { e.preventDefault(); handleExtractFiles(e.dataTransfer.files); });extractUploadArea。addEventListener('drop'   “下降”, e => {e.p preventdefault ()；handleExtractFiles (e.dataTransfer.files   文件);});
+    extractFileInput.addEventListener('change', e => { if(e.target.files.length) handleExtractFiles(e.target.files); extractFileInput.value=""; });extractFileInput。addEventListener('change'   “改变”, e => {if   如果(e.target   目标.files   文件.length   长度) handleExtractFiles(e.target   目标.files   文件)；extractFileInput.value   价值 =“,“;});
     clearFilesBtn.addEventListener('click', clearFiles);clearFilesBtn。addEventListener(“点击”,clearFiles);
-    processFilesBtn.addEventListener('click', processAllFiles);processFilesBtn。addEventListener(’click’,processAllFiles);
-    exportCsvBtn.addEventListener('click', exportToCSV);exportCsvBtn。addEventListener(’click’exportToCSV);
+    processFilesBtn.addEventListener('click', processAllFiles);processFilesBtn。addEventListener(’click’   ’click’,processAllFiles);
+    exportCsvBtn.addEventListener('click', exportToCSV);exportCsvBtn。addEventListener(’click’exportToCSV   ’ click   点击&rsquo exportToCSV);
     resetBtn.addEventListener('click', resetAll);resetBtn。addEventListener(“点击”,resetAll);
-    refreshDbBtn.addEventListener('click', loadDatabase);
-    manualLoadDbBtn.addEventListener('click', manualLoadDatabase);
-    clearDbBtn.addEventListener('click', clearDatabaseCache);
-    enableCustomFormat.addEventListener('change', function() { customRegexInput.disabled = !this.checked; if(!this.checked) customRegexInput.value=''; });
+    refreshDbBtn.addEventListener('click', loadDatabase);refreshDbBtn。addEventListener(“点击”,loadDatabase);
+    manualLoadBtn   < !DOCTYPE html   超文本标记语言>.addEventListener('click'   “点击”, manualLoadDatabase);
+    clearDbBtn.addEventListener('click'   “点击”, clearDatabaseCache);
+    enableCustomFormat.addEventListener('change', function() { customRegexInput.disabled = !this.checked; if(!this.checked) customRegexInput.value=''; });enableCustomFormat。addEventListener('change'   “改变”, function   函数() {customRegexInput。Disabled = !this   这.checked；如果(!这。检查)customRegexInput.value   价值 = ";});
     
     // 初始加载
-    processFilesBtn.disabled = true;
+    processFilesBtn.disabled = true;processFilesBtn。Disabled = true；
     loadDatabase();
 </script>   < / script>
 </body>   < / body>
